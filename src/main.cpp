@@ -1,5 +1,6 @@
 #include <stdint.h>
 #include <ESP8266WiFi.h>
+#include <PubSubClient.h>
 #include <SparkFunBME280.h>
 //Library allows either I2C or SPI, so include both.
 #include <Wire.h>
@@ -11,6 +12,13 @@ const char* ssid = "NinaWiFi";
 const char* password = "15426378";
 //const char* ssid = "Tomato24";
 //const char* password = "medical122015";
+
+const char *mqtt_server = "XXXX";
+const int mqtt_port = 0;
+const char *mqtt_user = "XXXX";
+const char *mqtt_pass = "XXXX";
+const char *mqtt_client = "XXXX"; // Client connections cant have the same connection name
+
 float h, t, p, pin, dp;
 char temperatureCString[6];
 char dpString[6];
@@ -18,8 +26,17 @@ char humidityString[6];
 char pressureString[7];
 char pressureMmString[6];
 
+long lastReconnectAttempt = 0;
 // Web Server on port 80
-WiFiServer server(80);
+WiFiServer wwwserver(80);
+WiFiClient wificlient;
+
+void callback(char* topic, byte* payload, unsigned int length) {
+  // handle message arrived
+}
+
+PubSubClient mqttclient(mqtt_server, mqtt_port, callback, wificlient);
+
 
 void getWeather() {
     h = bme280.readFloatHumidity();
@@ -51,8 +68,89 @@ void getWeather() {
     delay(100);
 }
 
-void setup()
-{
+void wwwloop() {
+  WiFiClient wwwclient = wwwserver.available();
+
+ if (wwwclient) {
+   // bolean to locate when the http request ends
+   boolean blank_line = true;
+   while (wwwclient.connected()) {
+     if (wwwclient.available()) {
+       char c = wwwclient.read();
+       if (c == '\n' && blank_line) {
+           getWeather();
+           wwwclient.println("HTTP/1.1 200 OK");
+           wwwclient.println("Content-Type: text/html");
+           wwwclient.println("Connection: close");
+           wwwclient.println();
+           // your actual web page that displays temperature
+           wwwclient.println("<!DOCTYPE HTML>");
+           wwwclient.println("<html>");
+           wwwclient.println("<head><META HTTP-EQUIV=\"refresh\" CONTENT=\"15\">");
+           wwwclient.println("</head>");
+           wwwclient.println("<body><h1>ESP8266 Погодный типа сервак</h1>");
+           wwwclient.println("<table border=\"2\" width=\"456\" cellpadding=\"10\"><tbody><tr><td>");
+           wwwclient.println("<h3>Температура = ");
+           wwwclient.println(temperatureCString);
+           wwwclient.println("&deg;C</h3><h3>Влажность = ");
+           wwwclient.println(humidityString);
+           wwwclient.println("%</h3><h3>Давление = ");
+           wwwclient.println(pressureMmString);
+           wwwclient.println("мм.тр.ст.</h3>");
+           break;
+       }
+       if (c == '\n') {
+         // when starts reading a new line
+         blank_line = true;
+       }
+       else if (c != '\r') {
+         // when finds a character on the current line
+         blank_line = false;
+       }
+     }
+   }
+
+   // closing the wwwclient connection
+   delay(1);
+   wwwclient.stop();
+ }
+}
+
+boolean reconnect() {
+    Serial.println("Attempting MQTT connection...");   // Attempt to connect
+      int ret = mqttclient.connect(mqtt_client, mqtt_user, mqtt_pass);
+            switch (ret) {
+    	      case 2:
+            Serial.println("Wrong protocol");
+            break;
+    	      case 3:
+            Serial.println("ID rejected");
+            break;
+    	      case 4:
+            Serial.println("Server unavailable");
+            break;
+    	      case 5:
+            Serial.println("Bad user/password");
+            break;
+    	      case 6:
+            Serial.println("Not authenticated");
+            break;
+    	      case 7:
+            Serial.println("Failed to subscribe");
+            break;
+    	      default:
+            Serial.print("Couldn't connect to server, code: ");
+            Serial.println(ret);
+            break;
+          }
+          Serial.print("Current MQTT state is ");
+          Serial.println(mqttclient.state());
+          Serial.print("var ret is ");
+          Serial.println(ret);
+          return mqttclient.connected();
+}
+
+void setup() {
 	bme280.settings.commInterface = I2C_MODE;
 	bme280.settings.I2CAddress = 0x76;
 	bme280.settings.runMode = 3; //Normal mode
@@ -163,13 +261,16 @@ void setup()
 
 	Serial.println("");
 	Serial.println("WiFi connected");
+  // Printing the ESP IP address
+  Serial.println(WiFi.localIP());
 
+  mqttclient.setServer(mqtt_server, mqtt_port);
+  mqttclient.setCallback(callback);
+  lastReconnectAttempt = 0;
 	// Starting the web server
-	server.begin();
+	wwwserver.begin();
 	Serial.println("Web server running. Waiting for the ESP IP...");
 	delay(10000);
-	// Printing the ESP IP address
-	Serial.println(WiFi.localIP());
 	Serial.println("Getting BME280 sensor data...");
 	getWeather();
 }
@@ -177,52 +278,22 @@ void setup()
 void loop()
 {
 	// Listenning for new clients
-  WiFiClient client = server.available();
+  WiFiClient client = wwwserver.available();
+  wwwloop();
 
-  if (client) {
-    Serial.println("New client");
-    // bolean to locate when the http request ends
-    boolean blank_line = true;
-    while (client.connected()) {
-      if (client.available()) {
-        char c = client.read();
 
-        if (c == '\n' && blank_line) {
-            getWeather();
-            client.println("HTTP/1.1 200 OK");
-            client.println("Content-Type: text/html");
-            client.println("Connection: close");
-            client.println();
-            // your actual web page that displays temperature
-            client.println("<!DOCTYPE HTML>");
-            client.println("<html>");
-            client.println("<head><META HTTP-EQUIV=\"refresh\" CONTENT=\"15\"></head>");
-            client.println("<body><h1>ESP8266 Weather Web Server</h1>");
-            client.println("<table border=\"2\" width=\"456\" cellpadding=\"10\"><tbody><tr><td>");
-            client.println("<h3>Temperature = ");
-            client.println(temperatureCString);
-            client.println(" &#8451;</h3><h3>Humidity = ");
-            client.println(humidityString);
-            client.println(" %</h3><h3>Pressure = ");
-            client.println(pressureString);
-            client.println(" hPa (");
-            client.println(pressureMmString);
-            client.println(" mmHg.)</h3></td></tr></tbody></table></body></html>");
-            break;
-        }
-        if (c == '\n') {
-          // when starts reading a new line
-          blank_line = true;
-        }
-        else if (c != '\r') {
-          // when finds a character on the current line
-          blank_line = false;
-        }
+if (!mqttclient.connected()) {
+    long now = millis();
+    if (now - lastReconnectAttempt > 5000) {
+      lastReconnectAttempt = now;
+      // Attempt to reconnect
+      if (reconnect()) {
+        lastReconnectAttempt = 0;
       }
     }
-    // closing the client connection
-    delay(1);
-    client.stop();
-    Serial.println("Client disconnected.");
+  }
+  else {
+    // Client connected
+    mqttclient.loop();
   }
 }
