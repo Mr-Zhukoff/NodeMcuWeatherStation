@@ -13,11 +13,11 @@ const char* password = "15426378";
 //const char* ssid = "Tomato24";
 //const char* password = "medical122015";
 
-const char *mqtt_server = "XXXX";
-const int mqtt_port = 0;
-const char *mqtt_user = "XXXX";
-const char *mqtt_pass = "XXXX";
-const char *mqtt_client = "XXXX"; // Client connections cant have the same connection name
+const char *mqtt_server = "m21.cloudmqtt.com";
+const int mqtt_port = 19115;
+const char *mqtt_user = "nodemcu";
+const char *mqtt_pass = "qwerty123";
+const char *mqtt_client = "NodeMCUv3"; // Client connections cant have the same connection name
 
 float h, t, p, pin, dp;
 char temperatureCString[6];
@@ -25,6 +25,9 @@ char dpString[6];
 char humidityString[6];
 char pressureString[7];
 char pressureMmString[6];
+
+unsigned long previousMillis = 0;        // will store last temp was send
+const long interval = 5000;
 
 long lastReconnectAttempt = 0;
 // Web Server on port 80
@@ -117,38 +120,31 @@ void wwwloop() {
 }
 
 boolean reconnect() {
-    Serial.println("Attempting MQTT connection...");   // Attempt to connect
-      int ret = mqttclient.connect(mqtt_client, mqtt_user, mqtt_pass);
-            switch (ret) {
-    	      case 2:
-            Serial.println("Wrong protocol");
-            break;
-    	      case 3:
-            Serial.println("ID rejected");
-            break;
-    	      case 4:
-            Serial.println("Server unavailable");
-            break;
-    	      case 5:
-            Serial.println("Bad user/password");
-            break;
-    	      case 6:
-            Serial.println("Not authenticated");
-            break;
-    	      case 7:
-            Serial.println("Failed to subscribe");
-            break;
-    	      default:
-            Serial.print("Couldn't connect to server, code: ");
-            Serial.println(ret);
-            break;
-          }
-          Serial.print("Current MQTT state is ");
-          Serial.println(mqttclient.state());
-          Serial.print("var ret is ");
-          Serial.println(ret);
-          return mqttclient.connected();
+  Serial.println("Attempting MQTT connection...");   // Attempt to connect
+  if(!mqttclient.connect(mqtt_client, mqtt_user, mqtt_pass)){
+    switch (mqttclient.state()) {
+      case -4: Serial.println("Connection timeout"); break;
+       case -3: Serial.println("Connection lost"); break;
+       case -2: Serial.println("Connection failed"); break;
+       case -1: Serial.println("Disconnected"); break;
+       case 0: Serial.println("Connected"); break;
+       case 1: Serial.println("Wrong protocol"); break;
+       case 2: Serial.println("Wrong client id"); break;
+       case 3: Serial.println("Server unavailable"); break;
+       case 4: Serial.println("Wrong user/password"); break;
+       case 5: Serial.println("Not authenticated"); break;
+       default:
+       Serial.print("Couldn't connect to server, state: ");
+       Serial.println(mqttclient.state());
+       break;
+     }
+     return mqttclient.connected();
+  }
+  else{
+    return true;
+  }
 }
+
 
 void setup() {
 	bme280.settings.commInterface = I2C_MODE;
@@ -281,7 +277,6 @@ void loop()
   WiFiClient client = wwwserver.available();
   wwwloop();
 
-
 if (!mqttclient.connected()) {
     long now = millis();
     if (now - lastReconnectAttempt > 5000) {
@@ -294,6 +289,18 @@ if (!mqttclient.connected()) {
   }
   else {
     // Client connected
+    unsigned long currentMillis = millis();
+    if(currentMillis - previousMillis >= interval) {
+      // save the last time you read the sensor
+      previousMillis = currentMillis;
+      // Update sensor data
+      getWeather();
+      // Send readings
+      mqttclient.publish("NodeMCUv3/BME280/temperature", temperatureCString);
+      mqttclient.publish("NodeMCUv3/BME280/humidity", humidityString);
+      mqttclient.publish("NodeMCUv3/BME280/pressure", pressureMmString);
+
+    }
     mqttclient.loop();
   }
 }
