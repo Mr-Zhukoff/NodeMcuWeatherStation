@@ -8,16 +8,19 @@
 
 //Global sensor object
 BME280 bme280;
-const char* ssid = "NinaWiFi";
-const char* password = "15426378";
-//const char* ssid = "Tomato24";
-//const char* password = "medical122015";
+// const char* ssid = "NinaWiFi";
+// const char* password = "15426378";
+const char* ssid = "Tomato24";
+const char* password = "medical122015";
 
 const char *mqtt_server = "m21.cloudmqtt.com";
 const int mqtt_port = 19115;
 const char *mqtt_user = "nodemcu";
 const char *mqtt_pass = "qwerty123";
 const char *mqtt_client = "NodeMCUv3"; // Client connections cant have the same connection name
+const char* outTopic = "NodeMCUv3/BME280/";
+const char* inTopic = "NodeMCUv3/BME280/";
+char msg[50];
 
 float h, t, p, pin, dp;
 char temperatureCString[6];
@@ -27,19 +30,34 @@ char pressureString[7];
 char pressureMmString[6];
 
 unsigned long previousMillis = 0;        // will store last temp was send
-const long interval = 5000;
+const long interval = 300000;
 
 long lastReconnectAttempt = 0;
 // Web Server on port 80
 WiFiServer wwwserver(80);
 WiFiClient wificlient;
+PubSubClient mqttclient(wificlient);
 
 void callback(char* topic, byte* payload, unsigned int length) {
-  // handle message arrived
+  // Conver the incoming byte array to a string
+  payload[length] = '\0'; // Null terminator used to terminate the char array
+  String message = (char*)payload;
+  Serial.print("Message arrived on topic: [");
+  Serial.print(topic);
+  Serial.print("], ");
+  Serial.println(message);
+
+  if(message == "temperature"){
+    Serial.print("Sending temperature:");
+    Serial.println(temperatureCString);
+    mqttclient.publish("NodeMCUv3/BME280/temperature", temperatureCString);
+  }
+  else if (message == "humidity"){
+    Serial.print("Sending humidity:");
+    Serial.println(humidityString);
+    mqttclient.publish("NodeMCUv3/BME280/temperature", humidityString);
+  }
 }
-
-PubSubClient mqttclient(mqtt_server, mqtt_port, callback, wificlient);
-
 
 void getWeather() {
     h = bme280.readFloatHumidity();
@@ -141,6 +159,7 @@ boolean reconnect() {
      return mqttclient.connected();
   }
   else{
+    mqttclient.subscribe(inTopic);
     return true;
   }
 }
