@@ -10,8 +10,8 @@
 BME280 bme280;
 // const char* ssid = "NinaWiFi";
 // const char* password = "15426378";
-const char* ssid = "Tomato24";
-const char* password = "medical122015";
+const char* ssid = "ZhukoffAP";
+const char* password = "18273645";
 
 const char *mqtt_server = "m21.cloudmqtt.com";
 const int mqtt_port = 19115;
@@ -37,27 +37,6 @@ long lastReconnectAttempt = 0;
 WiFiServer wwwserver(80);
 WiFiClient wificlient;
 PubSubClient mqttclient(wificlient);
-
-void callback(char* topic, byte* payload, unsigned int length) {
-  // Conver the incoming byte array to a string
-  payload[length] = '\0'; // Null terminator used to terminate the char array
-  String message = (char*)payload;
-  Serial.print("Message arrived on topic: [");
-  Serial.print(topic);
-  Serial.print("], ");
-  Serial.println(message);
-
-  if(message == "temperature"){
-    Serial.print("Sending temperature:");
-    Serial.println(temperatureCString);
-    mqttclient.publish("NodeMCUv3/BME280/temperature", temperatureCString);
-  }
-  else if (message == "humidity"){
-    Serial.print("Sending humidity:");
-    Serial.println(humidityString);
-    mqttclient.publish("NodeMCUv3/BME280/temperature", humidityString);
-  }
-}
 
 void getWeather() {
     h = bme280.readFloatHumidity();
@@ -89,52 +68,41 @@ void getWeather() {
     delay(100);
 }
 
-void wwwloop() {
-  WiFiClient wwwclient = wwwserver.available();
+void callback(char* topic, byte* payload, unsigned int length) {
+  // Conver the incoming byte array to a string
+  payload[length] = '\0'; // Null terminator used to terminate the char array
+  String message = (char*)payload;
+  Serial.print("Message arrived on topic: [");
+  Serial.print(topic);
+  Serial.print("], ");
+  Serial.println(message);
 
- if (wwwclient) {
-   // bolean to locate when the http request ends
-   boolean blank_line = true;
-   while (wwwclient.connected()) {
-     if (wwwclient.available()) {
-       char c = wwwclient.read();
-       if (c == '\n' && blank_line) {
-           getWeather();
-           wwwclient.println("HTTP/1.1 200 OK");
-           wwwclient.println("Content-Type: text/html");
-           wwwclient.println("Connection: close");
-           wwwclient.println();
-           // your actual web page that displays temperature
-           wwwclient.println("<!DOCTYPE HTML>");
-           wwwclient.println("<html>");
-           wwwclient.println("<head><META HTTP-EQUIV=\"refresh\" CONTENT=\"15\">");
-           wwwclient.println("</head>");
-           wwwclient.println("<body><h1>ESP8266 Погодный типа сервак</h1>");
-           wwwclient.println("<table border=\"2\" width=\"456\" cellpadding=\"10\"><tbody><tr><td>");
-           wwwclient.println("<h3>Температура = ");
-           wwwclient.println(temperatureCString);
-           wwwclient.println("&deg;C</h3><h3>Влажность = ");
-           wwwclient.println(humidityString);
-           wwwclient.println("%</h3><h3>Давление = ");
-           wwwclient.println(pressureMmString);
-           wwwclient.println("мм.тр.ст.</h3>");
-           break;
-       }
-       if (c == '\n') {
-         // when starts reading a new line
-         blank_line = true;
-       }
-       else if (c != '\r') {
-         // when finds a character on the current line
-         blank_line = false;
-       }
-     }
-   }
-
-   // closing the wwwclient connection
-   delay(1);
-   wwwclient.stop();
- }
+  getWeather();
+  if(message == "GetData"){
+    Serial.print("Sending all data");
+    Serial.println(temperatureCString);
+    Serial.println(humidityString);
+    Serial.println(pressureMmString);
+    // Send readings
+    mqttclient.publish("NodeMCUv3/BME280/temperature", temperatureCString);
+    mqttclient.publish("NodeMCUv3/BME280/humidity", humidityString);
+    mqttclient.publish("NodeMCUv3/BME280/pressure", pressureMmString);
+  }
+  if(message == "temperature"){
+    Serial.print("Sending temperature:");
+    Serial.println(temperatureCString);
+    mqttclient.publish("NodeMCUv3/BME280/temperature", temperatureCString);
+  }
+  else if (message == "humidity"){
+    Serial.print("Sending humidity:");
+    Serial.println(humidityString);
+    mqttclient.publish("NodeMCUv3/BME280/humidity", humidityString);
+  }
+  else if (message == "pressure"){
+    Serial.print("Sending pressure:");
+    Serial.println(pressureMmString);
+    mqttclient.publish("NodeMCUv3/BME280/pressure", pressureMmString);
+  }
 }
 
 boolean reconnect() {
@@ -285,7 +253,10 @@ void setup() {
 	// Starting the web server
 	wwwserver.begin();
 	Serial.println("Web server running. Waiting for the ESP IP...");
-	delay(10000);
+  for (size_t i = 0; i < 10; i++) {
+    Serial.print(".");
+    delay(1000);
+  }
 	Serial.println("Getting BME280 sensor data...");
 	getWeather();
 }
@@ -294,7 +265,6 @@ void loop()
 {
 	// Listenning for new clients
   WiFiClient client = wwwserver.available();
-  wwwloop();
 
 if (!mqttclient.connected()) {
     long now = millis();
