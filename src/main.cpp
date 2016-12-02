@@ -1,5 +1,6 @@
 #include <stdint.h>
 #include <ESP8266WiFi.h>
+#include <ArduinoJson.h>
 #include <PubSubClient.h>
 #include <SparkFunBME280.h>
 //Library allows either I2C or SPI, so include both.
@@ -10,7 +11,7 @@
 BME280 bme280;
 // const char* ssid = "NinaWiFi";
 // const char* password = "15426378";
-const char* ssid = "ZhukoffAP";
+const char* ssid = "ProdwareRus";
 const char* password = "18273645";
 
 const char *mqtt_server = "m21.cloudmqtt.com";
@@ -18,19 +19,23 @@ const int mqtt_port = 19115;
 const char *mqtt_user = "nodemcu";
 const char *mqtt_pass = "qwerty123";
 const char *mqtt_client = "NodeMCUv3"; // Client connections cant have the same connection name
-const char* outTopic = "NodeMCUv3/BME280/";
-const char* inTopic = "NodeMCUv3/BME280/";
+const char *inTopic="In/NodeMCUv3/BME280";
+const char *outTopicTemp = "Out/NodeMCUv3/BME280/Temperature";
+const char *outTopicHum="Out/NodeMCUv3/BME280/Humidity";
+const char *outTopicPress="Out/NodeMCUv3/BME280/Pressure";
+const char *outTopicJson="Out/NodeMCUv3/BME280/Json";
+
 char msg[50];
 
 float h, t, p, pin, dp;
-char temperatureCString[6];
-char dpString[6];
-char humidityString[6];
-char pressureString[7];
-char pressureMmString[6];
+char temperatureCString[10];
+char dpString[10];
+char humidityString[10];
+char pressureString[10];
+char pressureMmString[10];
 
 unsigned long previousMillis = 0;        // will store last temp was send
-const long interval = 300000;
+const long interval = 15000;
 
 long lastReconnectAttempt = 0;
 // Web Server on port 80
@@ -60,12 +65,44 @@ void getWeather() {
 
 		Serial.println();
 
+    // sprintf(temperatureCString, "%f", t);
+    // sprintf(pressureString, "%f", p);
+    // sprintf(pressureMmString, "%f", pin);
+    // sprintf(dpString, "%f", dp);
+    // sprintf(humidityString, "%f", h);
     dtostrf(t, 5, 1, temperatureCString);
     dtostrf(h, 5, 1, humidityString);
     dtostrf(p, 6, 1, pressureString);
     dtostrf(pin, 5, 2, pressureMmString);
     dtostrf(dp, 5, 1, dpString);
     delay(100);
+}
+
+void sendJsonData(){
+  // Memory pool for JSON object tree.
+  // Inside the brackets, 200 is the size of the pool in bytes.
+  // If the JSON object is more complex, you need to increase that value.
+    StaticJsonBuffer<200> jsonBuffer;
+
+    // Create the root of the object tree.
+    // It's a reference to the JsonObject, the actual bytes are inside the
+    // JsonBuffer with all the other nodes of the object tree.
+    // Memory is freed when jsonBuffer goes out of scope.
+    JsonObject& root = jsonBuffer.createObject();
+
+    root["name"] = "BME280";
+    root["temperature"] = t;
+    root["humidity"] = h;
+    root["pressure"] = pin;
+
+    int length = root.measureLength() + 1;
+    char json[length];
+
+    root.printTo(json, sizeof(json));
+
+    Serial.println(json);
+
+    mqttclient.publish(outTopicJson, json);
 }
 
 void callback(char* topic, byte* payload, unsigned int length) {
@@ -80,28 +117,22 @@ void callback(char* topic, byte* payload, unsigned int length) {
   getWeather();
   if(message == "GetData"){
     Serial.print("Sending all data");
-    Serial.println(temperatureCString);
-    Serial.println(humidityString);
-    Serial.println(pressureMmString);
-    // Send readings
-    mqttclient.publish("NodeMCUv3/BME280/temperature", temperatureCString);
-    mqttclient.publish("NodeMCUv3/BME280/humidity", humidityString);
-    mqttclient.publish("NodeMCUv3/BME280/pressure", pressureMmString);
+    mqttclient.publish(outTopicTemp, temperatureCString);
+    mqttclient.publish(outTopicHum, humidityString);
+    mqttclient.publish(outTopicPress, pressureMmString);
+    sendJsonData();
   }
   if(message == "temperature"){
     Serial.print("Sending temperature:");
-    Serial.println(temperatureCString);
-    mqttclient.publish("NodeMCUv3/BME280/temperature", temperatureCString);
+    mqttclient.publish(outTopicTemp, temperatureCString);
   }
   else if (message == "humidity"){
     Serial.print("Sending humidity:");
-    Serial.println(humidityString);
-    mqttclient.publish("NodeMCUv3/BME280/humidity", humidityString);
+    mqttclient.publish(outTopicHum, humidityString);
   }
   else if (message == "pressure"){
     Serial.print("Sending pressure:");
-    Serial.println(pressureMmString);
-    mqttclient.publish("NodeMCUv3/BME280/pressure", pressureMmString);
+    mqttclient.publish(outTopicPress, pressureMmString);
   }
 }
 
@@ -185,46 +216,6 @@ void setup() {
 
 	Serial.print("\n\n");
 
-	Serial.print("Displaying concatenated calibration words\n");
-	Serial.print("dig_T1, uint16: ");
-	Serial.println(bme280.calibration.dig_T1);
-	Serial.print("dig_T2, int16: ");
-	Serial.println(bme280.calibration.dig_T2);
-	Serial.print("dig_T3, int16: ");
-	Serial.println(bme280.calibration.dig_T3);
-
-	Serial.print("dig_P1, uint16: ");
-	Serial.println(bme280.calibration.dig_P1);
-	Serial.print("dig_P2, int16: ");
-	Serial.println(bme280.calibration.dig_P2);
-	Serial.print("dig_P3, int16: ");
-	Serial.println(bme280.calibration.dig_P3);
-	Serial.print("dig_P4, int16: ");
-	Serial.println(bme280.calibration.dig_P4);
-	Serial.print("dig_P5, int16: ");
-	Serial.println(bme280.calibration.dig_P5);
-	Serial.print("dig_P6, int16: ");
-	Serial.println(bme280.calibration.dig_P6);
-	Serial.print("dig_P7, int16: ");
-	Serial.println(bme280.calibration.dig_P7);
-	Serial.print("dig_P8, int16: ");
-	Serial.println(bme280.calibration.dig_P8);
-	Serial.print("dig_P9, int16: ");
-	Serial.println(bme280.calibration.dig_P9);
-
-	Serial.print("dig_H1, uint8: ");
-	Serial.println(bme280.calibration.dig_H1);
-	Serial.print("dig_H2, int16: ");
-	Serial.println(bme280.calibration.dig_H2);
-	Serial.print("dig_H3, uint8: ");
-	Serial.println(bme280.calibration.dig_H3);
-	Serial.print("dig_H4, int16: ");
-	Serial.println(bme280.calibration.dig_H4);
-	Serial.print("dig_H5, int16: ");
-	Serial.println(bme280.calibration.dig_H5);
-	Serial.print("dig_H6, uint8: ");
-	Serial.println(bme280.calibration.dig_H6);
-
 	if (!bme280.begin()) {
     Serial.println("Could not find a valid BME280 sensor, check wiring!");
     while (1);
@@ -285,9 +276,9 @@ if (!mqttclient.connected()) {
       // Update sensor data
       getWeather();
       // Send readings
-      mqttclient.publish("NodeMCUv3/BME280/temperature", temperatureCString);
-      mqttclient.publish("NodeMCUv3/BME280/humidity", humidityString);
-      mqttclient.publish("NodeMCUv3/BME280/pressure", pressureMmString);
+      mqttclient.publish(outTopicTemp, temperatureCString);
+      mqttclient.publish(outTopicHum, humidityString);
+      mqttclient.publish(outTopicPress, pressureMmString);
 
     }
     mqttclient.loop();
