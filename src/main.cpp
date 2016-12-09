@@ -38,8 +38,7 @@ unsigned long previousMillis = 0;        // will store last temp was send
 const long interval = 15000;
 
 long lastReconnectAttempt = 0;
-// Web Server on port 80
-WiFiServer wwwserver(80);
+
 WiFiClient wificlient;
 PubSubClient mqttclient(wificlient);
 
@@ -241,22 +240,13 @@ void setup() {
   mqttclient.setServer(mqtt_server, mqtt_port);
   mqttclient.setCallback(callback);
   lastReconnectAttempt = 0;
-	// Starting the web server
-	wwwserver.begin();
-	Serial.println("Web server running. Waiting for the ESP IP...");
-  for (size_t i = 0; i < 10; i++) {
-    Serial.print(".");
-    delay(1000);
-  }
+
 	Serial.println("Getting BME280 sensor data...");
 	getWeather();
 }
 
 void loop()
 {
-	// Listenning for new clients
-  WiFiClient client = wwwserver.available();
-
 if (!mqttclient.connected()) {
     long now = millis();
     if (now - lastReconnectAttempt > 5000) {
