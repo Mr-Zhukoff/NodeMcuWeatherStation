@@ -2,78 +2,66 @@
 #include <ESP8266WiFi.h>
 #include <ArduinoJson.h>
 #include <PubSubClient.h>
-#include <SparkFunBME280.h>
-//Library allows either I2C or SPI, so include both.
-#include <Wire.h>
-#include <SPI.h>
+#include <DHT.h>
 
-//Global sensor object
-BME280 bme280;
 // const char* ssid = "NinaWiFi";
 // const char* password = "15426378";
-const char* ssid = "ProdwareRus";
-const char* password = "18273645";
+const char* ssid = "webclinic";
+const char* password = "Hellokitty12";
 
 const char *mqtt_server = "m21.cloudmqtt.com";
 const int mqtt_port = 19115;
 const char *mqtt_user = "nodemcu";
 const char *mqtt_pass = "qwerty123";
 const char *mqtt_client = "NodeMCUv3"; // Client connections cant have the same connection name
-const char *inTopic="In/NodeMCUv3/BME280";
-const char *outTopicTemp = "Out/NodeMCUv3/BME280/Temperature";
-const char *outTopicHum="Out/NodeMCUv3/BME280/Humidity";
-const char *outTopicPress="Out/NodeMCUv3/BME280/Pressure";
-const char *outTopicJson="Out/NodeMCUv3/BME280/Json";
+const char *inTopic="In/NodeMCUv3/DHT22";
+const char *outTopicTemp = "Out/NodeMCUv3/DHT22/Temperature";
+const char *outTopicHum="Out/NodeMCUv3/DHT22/Humidity";
+const char *outTopicPress="Out/NodeMCUv3/DHT22/Pressure";
+const char *outTopicJson="Out/NodeMCUv3/DHT22/Json";
 
 char msg[50];
 
-float h, t, p, pin, dp;
+#define DHT1PIN 5
+#define DHTTYPE DHT22
+
+float h1, t1, h2, t2, p, pin, dp;
 char temperatureCString[10];
 char dpString[10];
 char humidityString[10];
-char pressureString[10];
-char pressureMmString[10];
 
 unsigned long previousMillis = 0;        // will store last temp was send
 const long interval = 15000;
 
 long lastReconnectAttempt = 0;
 
+DHT dht1(DHT1PIN, DHTTYPE);
 WiFiClient wificlient;
 PubSubClient mqttclient(wificlient);
 
 void getWeather() {
-    h = bme280.readFloatHumidity();
-    t = bme280.readTempC();
-    //t = t*1.8+32.0;
-    dp = t-0.36*(100.0-h);
-    p = bme280.readFloatPressure()/100.0F;
-    pin = 0.7500637554192*p;
+    h1 = dht1.readHumidity();
+    t1 = dht1.readTemperature();
+    // Check if any reads failed and exit early (to try again).
+    if (isnan(h1) || isnan(t1)) {
+      Serial.println("Failed to read from DHT sensor!");
+      return;
+    }
 
 		Serial.print("Temperature: ");
-		Serial.print(t, 2);
+		Serial.print(t1, 2);
 		Serial.println(" C");
 
-		Serial.print("Pressure: ");
-		Serial.print(p, 2);
-		Serial.println(" hPa");
 
 		Serial.print("Humidity: ");
-		Serial.print(h, 2);
+		Serial.print(h1, 2);
 		Serial.println(" %");
 
 		Serial.println();
 
-    // sprintf(temperatureCString, "%f", t);
-    // sprintf(pressureString, "%f", p);
-    // sprintf(pressureMmString, "%f", pin);
-    // sprintf(dpString, "%f", dp);
-    // sprintf(humidityString, "%f", h);
-    dtostrf(t, 5, 1, temperatureCString);
-    dtostrf(h, 5, 1, humidityString);
-    dtostrf(p, 6, 1, pressureString);
-    dtostrf(pin, 5, 2, pressureMmString);
-    dtostrf(dp, 5, 1, dpString);
+    dtostrf(t1, 5, 1, temperatureCString);
+    dtostrf(h1, 5, 1, humidityString);
+
     delay(100);
 }
 
@@ -89,10 +77,10 @@ void sendJsonData(){
     // Memory is freed when jsonBuffer goes out of scope.
     JsonObject& root = jsonBuffer.createObject();
 
-    root["name"] = "BME280";
-    root["temperature"] = t;
-    root["humidity"] = h;
-    root["pressure"] = pin;
+    root["name"] = "DHT22";
+    root["temperature"] = t1;
+    root["humidity"] = h1;
+    //root["pressure"] = pin;
 
     int length = root.measureLength() + 1;
     char json[length];
@@ -118,7 +106,7 @@ void callback(char* topic, byte* payload, unsigned int length) {
     Serial.print("Sending all data");
     mqttclient.publish(outTopicTemp, temperatureCString);
     mqttclient.publish(outTopicHum, humidityString);
-    mqttclient.publish(outTopicPress, pressureMmString);
+    //mqttclient.publish(outTopicPress, pressureMmString);
     sendJsonData();
   }
   if(message == "temperature"){
@@ -131,7 +119,7 @@ void callback(char* topic, byte* payload, unsigned int length) {
   }
   else if (message == "pressure"){
     Serial.print("Sending pressure:");
-    mqttclient.publish(outTopicPress, pressureMmString);
+    //mqttclient.publish(outTopicPress, pressureMmString);
   }
 }
 
@@ -164,61 +152,8 @@ boolean reconnect() {
 
 
 void setup() {
-	bme280.settings.commInterface = I2C_MODE;
-	bme280.settings.I2CAddress = 0x76;
-	bme280.settings.runMode = 3; //Normal mode
-	bme280.settings.tStandby = 0; //  0, 0.5ms
-	bme280.settings.filter = 0; //  0, filter off
-	bme280.settings.tempOverSample = 1;
-  bme280.settings.pressOverSample = 1;
-	bme280.settings.humidOverSample = 1;
-
 	Serial.begin(9600);
-	Serial.print("Program Started\n");
-	Serial.print("Starting BME280... result of .begin(): 0x");
-
-	//Calling .begin() causes the settings to be loaded
-	delay(10);  //Make sure sensor had enough time to turn on. BME280 requires 2ms to start up.
-	Serial.println(bme280.begin(), HEX);
-
-	Serial.print("Displaying ID, reset and ctrl regs\n");
-
-	Serial.print("ID(0xD0): 0x");
-	Serial.println(bme280.readRegister(BME280_CHIP_ID_REG), HEX);
-	Serial.print("Reset register(0xE0): 0x");
-	Serial.println(bme280.readRegister(BME280_RST_REG), HEX);
-	Serial.print("ctrl_meas(0xF4): 0x");
-	Serial.println(bme280.readRegister(BME280_CTRL_MEAS_REG), HEX);
-	Serial.print("ctrl_hum(0xF2): 0x");
-	Serial.println(bme280.readRegister(BME280_CTRL_HUMIDITY_REG), HEX);
-
-	Serial.print("\n\n");
-
-	Serial.print("Displaying all regs\n");
-	uint8_t memCounter = 0x80;
-	uint8_t tempReadData;
-	for(int rowi = 8; rowi < 16; rowi++ )
-	{
-		Serial.print("0x");
-		Serial.print(rowi, HEX);
-		Serial.print("0:");
-		for(int coli = 0; coli < 16; coli++ )
-		{
-			tempReadData = bme280.readRegister(memCounter);
-			Serial.print((tempReadData >> 4) & 0x0F, HEX);//Print first hex nibble
-			Serial.print(tempReadData & 0x0F, HEX);//Print second hex nibble
-			Serial.print(" ");
-			memCounter++;
-		}
-		Serial.print("\n");
-	}
-
-	Serial.print("\n\n");
-
-	if (!bme280.begin()) {
-    Serial.println("Could not find a valid BME280 sensor, check wiring!");
-    while (1);
-  }
+	Serial.print("\nProgram Started\n");
 
 	// Connecting to WiFi network
 	Serial.println();
@@ -241,7 +176,7 @@ void setup() {
   mqttclient.setCallback(callback);
   lastReconnectAttempt = 0;
 
-	Serial.println("Getting BME280 sensor data...");
+	Serial.println("Getting DHT sensor data...");
 	getWeather();
 }
 
@@ -268,8 +203,7 @@ if (!mqttclient.connected()) {
       // Send readings
       mqttclient.publish(outTopicTemp, temperatureCString);
       mqttclient.publish(outTopicHum, humidityString);
-      mqttclient.publish(outTopicPress, pressureMmString);
-
+      //mqttclient.publish(outTopicPress, pressureMmString);
     }
     mqttclient.loop();
   }
