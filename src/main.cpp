@@ -3,6 +3,7 @@
 #include <ArduinoJson.h>
 #include <PubSubClient.h>
 #include <DHT.h>
+#include <LedControl.h>
 
 // const char* ssid = "NinaWiFi";
 // const char* password = "15426378";
@@ -22,45 +23,64 @@ const char *outTopicJson="Out/NodeMCUv3/DHT22/Json";
 
 char msg[50];
 
-#define DHT1PIN 5
+#define DHT1PIN 2
 #define DHTTYPE DHT22
 
-float h1, t1, h2, t2, p, pin, dp;
+float h, t;
 char temperatureCString[10];
-char dpString[10];
 char humidityString[10];
+char tCharVal[5];
+char hCharVal[5];
 
 unsigned long previousMillis = 0;        // will store last temp was send
 const long interval = 15000;
 
 long lastReconnectAttempt = 0;
 
+// CS (CS)(LOAD), CLK (CLK), LOAD(DIN), drivers
+LedControl lc = LedControl(12, 14, 13, 1);
+
 DHT dht1(DHT1PIN, DHTTYPE);
 WiFiClient wificlient;
 PubSubClient mqttclient(wificlient);
 
+void showOnLcd(){
+  Serial.println("Showing LCD value");
+  lc.clearDisplay(0);
+  dtostrf(t, 2, 2, tCharVal);
+  dtostrf(h, 2, 2, hCharVal);
+  Serial.println(tCharVal);
+  Serial.println(hCharVal);
+  lc.setChar(0,0,' ',false); // пустота
+  lc.setChar(0,1,' ',false);
+  lc.setChar(0,2,' ',false);
+  lc.setChar(0,3,' ',false);
+}
+
 void getWeather() {
-    h1 = dht1.readHumidity();
-    t1 = dht1.readTemperature();
+    h = dht1.readHumidity();
+    t = dht1.readTemperature();
     // Check if any reads failed and exit early (to try again).
-    if (isnan(h1) || isnan(t1)) {
+    if (isnan(h) || isnan(t)) {
       Serial.println("Failed to read from DHT sensor!");
       return;
     }
 
 		Serial.print("Temperature: ");
-		Serial.print(t1, 2);
+		Serial.print(t, 2);
 		Serial.println(" C");
 
 
 		Serial.print("Humidity: ");
-		Serial.print(h1, 2);
+		Serial.print(h, 2);
 		Serial.println(" %");
 
 		Serial.println();
 
-    dtostrf(t1, 5, 1, temperatureCString);
-    dtostrf(h1, 5, 1, humidityString);
+    showOnLcd();
+
+    dtostrf(t, 5, 1, temperatureCString);
+    dtostrf(h, 5, 1, humidityString);
 
     delay(100);
 }
@@ -78,8 +98,8 @@ void sendJsonData(){
     JsonObject& root = jsonBuffer.createObject();
 
     root["name"] = "DHT22";
-    root["temperature"] = t1;
-    root["humidity"] = h1;
+    root["temperature"] = t;
+    root["humidity"] = h;
     //root["pressure"] = pin;
 
     int length = root.measureLength() + 1;
@@ -172,11 +192,17 @@ void setup() {
   // Printing the ESP IP address
   Serial.println(WiFi.localIP());
 
+  // LCD Initialize MAX7219
+  lc.shutdown(0, false);// turning LCD on
+  lc.setIntensity(0, 8);// setting brghtness (0-min, 15-max)
+	lc.clearDisplay(0);// clear display
+
   mqttclient.setServer(mqtt_server, mqtt_port);
   mqttclient.setCallback(callback);
   lastReconnectAttempt = 0;
-  delay(100);
+
 	Serial.println("Getting DHT sensor data...");
+  delay(500);
 	getWeather();
 }
 
