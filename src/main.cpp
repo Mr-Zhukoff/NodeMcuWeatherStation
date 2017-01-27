@@ -175,7 +175,7 @@ void setup() {
   mqttclient.setServer(mqtt_server, mqtt_port);
   mqttclient.setCallback(callback);
   lastReconnectAttempt = 0;
-
+  delay(100);
 	Serial.println("Getting DHT sensor data...");
 	getWeather();
 }
